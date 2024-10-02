@@ -42,15 +42,15 @@ getDb().catch(console.error);
 
 headsetConnections = {}
 controllerConnections = {}
-
+connections = {}
 
 io.on('connection', (socket) => {
     console.log('a user connected');
     console.log(connections);
     socket.on('disconnect', () => {
         console.log('user disconnected');
-        connections = Object.fromEntries(Object.entries(connections).filter(([key, value]) => value.socketId !== socket.id));
-        console.log(connections);
+        headsetConnections = Object.fromEntries(Object.entries(headsetConnections).filter(([key, value]) => value.socketId !== socket.id));
+        console.log(headsetConnections);
     });
     socket.on('headsetStatusUpdate', (msg) => {
         console.log('message: ' + msg);
