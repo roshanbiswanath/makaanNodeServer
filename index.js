@@ -9,7 +9,7 @@ var cors = require('cors')
 
 
 const { Server } = require("socket.io");
-const io = new Server(server,{
+const io = new Server(server, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"]
@@ -18,6 +18,7 @@ const io = new Server(server,{
 app.use(cors())
 
 const { initializeApp, cert } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 
 fs.writeFileSync("./vr-realestate-demo-firebase-adminsdk-q9gbz-ef6209c3d7.json", process.env.FIREBASE_SECRET, "utf-8");
 
@@ -49,11 +50,13 @@ connections = {}
 io.on('connection', (socket) => {
     console.log('a user connected');
     // console.log(connections);
+
     socket.on('disconnect', () => {
         console.log('user disconnected');
         headsetConnections = Object.fromEntries(Object.entries(headsetConnections).filter(([key, value]) => value.socketId !== socket.id));
         // console.log(headsetConnections);
     });
+
     socket.on('headsetStatusUpdate', (msg) => {
         // console.log('message: ' + msg);
         connections[msg] = {
@@ -64,6 +67,7 @@ io.on('connection', (socket) => {
         // console.log(connections)
         io.emit('deviceStatus', msg);
     })
+
     // socket.on('controllerConnection', (ownerId) => {
     //     console.log('Owner: ' + ownerId);
     //     controllerConnections[socket.id] = {
@@ -72,9 +76,9 @@ io.on('connection', (socket) => {
     //     }
     // });
 
-    socket.on('sceneChangeCommand', (command) => { 
+    socket.on('sceneChangeCommand', (command) => {
         console.log('Scene Change: ' + command.sceneID);
-        if(!(command.deviceID in connections)) {
+        if (!(command.deviceID in connections)) {
             console.log('Device not connected');
             return;
         }
@@ -82,9 +86,10 @@ io.on('connection', (socket) => {
         io.to(socketId).emit('sceneChange', command.sceneID);
         // io.emit('sceneChange', command);
     })
-    socket.on('teleChangeCommand', (command) => { 
+
+    socket.on('teleChangeCommand', (command) => {
         console.log('Tele Change: ' + command.teleID);
-        if(!(command.deviceID in connections)) {
+        if (!(command.deviceID in connections)) {
             console.log('Device not connected');
             return;
         }
@@ -92,10 +97,102 @@ io.on('connection', (socket) => {
         io.to(socketId).emit('teleChange', command.teleID);
         // io.emit('sceneChange', command);
     })
+
+});
+
+app.get('/allUsers', async (req, res) => {
+    const snapshot = await db.collection('users').get();
+    let retObj = {}
+    for (const doc of snapshot.docs) {
+        retObj[doc.id] = doc.data();
+    }
+    res.send(retObj);
+});
+
+app.get('/users/:userId', async (req, res) => {
+    const snapshot = await db.collection('users').doc(req.params.userId).get();
+    res.send(snapshot.data());
+});
+
+app.post('/users/createUser', async (req, res) => {
+    getAuth()
+        .createUser({
+            email: req.body.email,
+            emailVerified: false,
+            // phoneNumber: '+11234567890',
+            password: req.body.password,
+            displayName: req.body.name,
+        })
+        .then((userRecord) => {
+            // See the UserRecord reference doc for the contents of userRecord.
+            console.log('Successfully created new user:', userRecord.uid);
+            res.send(userRecord);
+        })
+        .catch((error) => {
+            console.log('Error creating new user:', error);
+            res.send(error);
+        });
+});
+
+app.get('/users/:userId/headsets', async (req, res) => {
+    const snapshot = await db.collection('devices').where('owner', '==', req.params.userId).get();
+    let retObj = {}
+    for (const doc of snapshot.docs) {
+        retObj[doc.id] = doc.data();
+        if (doc.data().deviceID in connections) {
+            retObj[doc.id].status = connections[doc.data().deviceID].status;
+        }
+        else {
+            retObj[doc.id].status = "Offline";
+        }
+    }
+    res.send(retObj);
+});
+
+app.get('/users/:userId/addHeadset', async (req, res) => {
+    const snapshot = await db.collection('devices').add({
+        
+        owner: req.params.userId
+    });
+    res.send(snapshot);
+});
+
+app.get('/users/:userId/estates', async (req, res) => {
+    const snapshot = await db.collection('estates').where('owner', '==', req.params.userId).get();
+    let retObj = {}
+    for (const doc of snapshot.docs) {
+        retObj[doc.id] = doc.data();
+    }
+    res.send(retObj);
 });
 
 app.get('/', (req, res) => {
     res.send('<h1>Hello world</h1>');
+});
+
+app.get('/headsets', async (req, res) => {
+    const snapshot = await db.collection('devices').get();
+    let retObj = {}
+    for (const doc of snapshot.docs) {
+        retObj[doc.id] = doc.data();
+        if (doc.data().deviceID in connections) {
+            retObj[doc.id].status = connections[doc.data().deviceID].status;
+        }
+        else {
+            retObj[doc.id].status = "Offline";
+        }
+    }
+    res.send(retObj);
+});
+
+app.get('/activeHeadsetsCount', async (req, res) => {
+    retObj = {
+        activeCount: Object.keys(connections).length,
+        totalCount: 0
+    }
+    const snapshot = await db.collection('devices').get();
+    retObj.totalCount = snapshot.size;
+    res.send(retObj);
 });
 
 app.get('/headsets/:ownerId', async (req, res) => {
@@ -117,6 +214,8 @@ app.get('/headsets/:ownerId', async (req, res) => {
     }
     res.send(retObj);
 });
+
+
 
 server.listen(3000, () => {
     console.log('listening on *:3000');
