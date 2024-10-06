@@ -1,5 +1,6 @@
 const express = require('express');
 const app = express();
+app.use(express.json());
 const http = require('http');
 const { connect } = require('http2');
 const server = http.createServer(app);
@@ -115,24 +116,33 @@ app.get('/users/:userId', async (req, res) => {
 });
 
 app.post('/users/createUser', async (req, res) => {
-    getAuth()
-        .createUser({
+    try {
+        // Create a new user with Firebase Auth
+        const userRecord = await getAuth().createUser({
             email: req.body.email,
             emailVerified: false,
-            // phoneNumber: '+11234567890',
             password: req.body.password,
-            displayName: req.body.name,
-        })
-        .then((userRecord) => {
-            // See the UserRecord reference doc for the contents of userRecord.
-            console.log('Successfully created new user:', userRecord.uid);
-            res.send(userRecord);
-        })
-        .catch((error) => {
-            console.log('Error creating new user:', error);
-            res.send(error);
+            name: req.body.name,
         });
+
+        console.log('Successfully created new user:', userRecord.uid);
+
+        // Add the user to Firestore
+        await db.collection('users').doc(userRecord.uid).set({
+            email: req.body.email,
+            name: req.body.name,
+            createdAt: Timestamp.now(),
+            // You can add other user fields here if needed
+        });
+
+        // Respond with the user record
+        res.send(userRecord);
+    } catch (error) {
+        console.error('Error creating new user:', error);
+        res.status(500).send(error); // Return a 500 status for server errors
+    }
 });
+
 
 app.get('/users/:userId/headsets', async (req, res) => {
     const snapshot = await db.collection('devices').where('owner', '==', req.params.userId).get();
@@ -166,6 +176,7 @@ app.get('/users/:userId/estates', async (req, res) => {
     res.send(retObj);
 });
 
+
 app.get('/', (req, res) => {
     res.send('<h1>Hello world</h1>');
 });
@@ -184,6 +195,32 @@ app.get('/headsets', async (req, res) => {
     }
     res.send(retObj);
 });
+
+app.post('/createHeadset', async (req, res) => {
+    try {
+        const { deviceID, deviceName, status } = req.body; // Accept deviceID, deviceName, and status
+
+        // Validate required fields
+        if (!deviceID || !deviceName) {
+            return res.status(400).send('deviceID and deviceName are required');
+        }
+
+        // Add the new headset to Firestore
+        const headsetDoc = await db.collection('devices').add({
+            deviceID: deviceID,
+            deviceName: deviceName,
+            status: status || 'Offline', // Default status if not provided
+            createdAt: Timestamp.now()
+        });
+
+        console.log('Successfully created new headset:', headsetDoc.id);
+        res.status(201).send({ id: headsetDoc.id, message: 'Headset created successfully' });
+    } catch (error) {
+        console.error('Error creating new headset:', error);
+        res.status(500).send('Error creating headset'); // Return a 500 status for server errors
+    }
+});
+
 
 app.get('/activeHeadsetsCount', async (req, res) => {
     retObj = {
@@ -215,6 +252,44 @@ app.get('/headsets/:ownerId', async (req, res) => {
     res.send(retObj);
 });
 
+app.get('/estates', async (req, res) => {
+    try {
+        const snapshot = await db.collection('estates').get();
+        let retObj = {};
+        for (const doc of snapshot.docs) {
+            retObj[doc.id] = doc.data();
+        }
+        res.send(retObj);
+    } catch (error) {
+        console.error('Error retrieving estates:', error);
+        res.status(500).send('Error retrieving estates');
+    }
+});
+
+app.post('/createEstate', async (req, res) => {
+    try {
+        const { estateID, estateName, status } = req.body; // Accept relevant estate details
+
+        // Validate required fields
+        if (!estateID || !estateName) {
+            return res.status(400).send('estateID and estateName are required');
+        }
+
+        // Add the new estate to Firestore
+        const estateDoc = await db.collection('estates').add({
+            estateID: estateID,
+            estateName: estateName,
+            status: status || 'Available', // Default status if not provided
+            createdAt: Timestamp.now()
+        });
+
+        console.log('Successfully created new estate:', estateDoc.id);
+        res.status(201).send({ id: estateDoc.id, message: 'Estate created successfully' });
+    } catch (error) {
+        console.error('Error creating new estate:', error);
+        res.status(500).send('Error creating estate'); // Return a 500 status for server errors
+    }
+});
 
 
 server.listen(3000, () => {
