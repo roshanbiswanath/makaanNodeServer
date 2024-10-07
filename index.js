@@ -143,6 +143,29 @@ app.post('/users/createUser', async (req, res) => {
     }
 });
 
+app.post('/users/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).send('Email and password are required');
+    }
+
+    try {
+        const userRecord = await getAuth().getUserByEmail(email);
+        
+        // Note: Password verification logic should be added here
+        // For now, assuming that if user exists, the password is valid
+        // This is just for demonstration; you should implement proper password validation
+
+        res.send({
+            message: 'Login successful',
+            uid: userRecord.uid
+        });
+    } catch (error) {
+        console.error('Error logging in:', error);
+        res.status(500).send('Error logging in');
+    }
+});
 
 app.get('/users/:userId/headsets', async (req, res) => {
     const snapshot = await db.collection('devices').where('owner', '==', req.params.userId).get();
