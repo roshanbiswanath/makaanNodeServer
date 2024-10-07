@@ -54,7 +54,7 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log('user disconnected');
-        headsetConnections = Object.fromEntries(Object.entries(headsetConnections).filter(([key, value]) => value.socketId !== socket.id));
+        connections = Object.fromEntries(Object.entries(connections).filter(([key, value]) => value.socketId !== socket.id));
         // console.log(headsetConnections);
     });
 
@@ -90,6 +90,7 @@ io.on('connection', (socket) => {
 
     socket.on('teleChangeCommand', (command) => {
         console.log('Tele Change: ' + command.teleID);
+        console.log(command.deviceID)
         if (!(command.deviceID in connections)) {
             console.log('Device not connected');
             return;
@@ -145,14 +146,14 @@ app.post('/users/createUser', async (req, res) => {
 
 app.post('/users/login', async (req, res) => {
     const { email, password } = req.body;
-
+    console.log("Login Required")
     if (!email || !password) {
         return res.status(400).send('Email and password are required');
     }
 
     try {
         const userRecord = await getAuth().getUserByEmail(email);
-        
+
         // Note: Password verification logic should be added here
         // For now, assuming that if user exists, the password is valid
         // This is just for demonstration; you should implement proper password validation
@@ -184,19 +185,23 @@ app.get('/users/:userId/headsets', async (req, res) => {
 
 app.get('/users/:userId/addHeadset', async (req, res) => {
     const snapshot = await db.collection('devices').add({
-        
+
         owner: req.params.userId
     });
     res.send(snapshot);
 });
 
 app.get('/users/:userId/estates', async (req, res) => {
-    const snapshot = await db.collection('estates').where('owner', '==', req.params.userId).get();
-    let retObj = {}
-    for (const doc of snapshot.docs) {
-        retObj[doc.id] = doc.data();
+    //const snapshot = await db.collection('estates').where('owner', '==', req.params.userId).get();
+    const snapshot = await db.collection('users').where('id','==',req.params.userId).get()
+    console.log(req.params.userId)
+    let assignedEstates = snapshot.docs[0].data().assignedEstates;
+    let retList = []
+    for (let index = 0; index < assignedEstates.length; index++) {
+        let estate = await db.collection('estates').where('estateID','==',assignedEstates[index]).get()
+        retList.push(estate.docs[0].data())
     }
-    res.send(retObj);
+    res.send(retList);
 });
 
 
