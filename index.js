@@ -7,6 +7,7 @@ const server = http.createServer(app);
 const fs = require('fs');
 require('dotenv').config()
 var cors = require('cors')
+const { v4: uuidv4 } = require('uuid');
 
 
 const { Server } = require("socket.io");
@@ -117,30 +118,52 @@ app.get('/users/:userId', async (req, res) => {
 });
 
 app.post('/users/createUser', async (req, res) => {
+    const { email, password, name } = req.body;
+
+    if (!email || !password || !name) {
+        return res.status(400).send({ message: 'Email, password, and name are required' });
+    }
+
     try {
-        // Create a new user with Firebase Auth
+        // Step 1: Create user in Firebase Authentication
         const userRecord = await getAuth().createUser({
-            email: req.body.email,
-            emailVerified: false,
-            password: req.body.password,
-            name: req.body.name,
+            email,
+            password, // Password will automatically be hashed by Firebase Auth
+            displayName: name,
         });
+        const firebaseAuthId = userRecord.uid;
 
-        console.log('Successfully created new user:', userRecord.uid);
+        console.log('Successfully created Firebase user:', firebaseAuthId);
 
-        // Add the user to Firestore
-        await db.collection('users').doc(userRecord.uid).set({
-            email: req.body.email,
-            name: req.body.name,
-            createdAt: Timestamp.now(),
-            // You can add other user fields here if needed
+        // Step 3: Generate a unique ID for the user
+        const userId = uuidv4(); // Unique ID for the user document
+
+        // Step 4: Store the user in Firestore
+        const userData = {
+            id: userId,
+            firebaseAuthId,  // Firebase Auth UID
+            email,
+            name,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        };
+
+        await db.collection('users').doc(userId).set(userData);
+        console.log('User document successfully created in Firestore:', userId);
+
+        // Step 5: Respond with success message and user details
+        res.status(201).send({
+            message: 'User created successfully',
+            user: {
+                id: userId,
+                email: userData.email,
+                name: userData.name,
+                firebaseAuthId: userData.firebaseAuthId,
+            }
         });
-
-        // Respond with the user record
-        res.send(userRecord);
     } catch (error) {
-        console.error('Error creating new user:', error);
-        res.status(500).send(error); // Return a 500 status for server errors
+        console.error('Error creating user:', error);
+        res.status(500).send({ message: 'Error creating user', error: error.message });
     }
 });
 
@@ -218,6 +241,27 @@ app.post('/users/:userId/addHeadset', async (req, res) => {
     }
 });
 
+app.post('/users/:userId/deleteUser', async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        // Delete the user from Firebase Auth
+        // await getAuth().deleteUser(userId);
+        // console.log(`Successfully deleted user: ${userId}`);
+
+        // Delete the user document from Firestore
+        await db.collection('users').doc(userId).delete();
+        console.log(`Successfully deleted user document from Firestore: ${userId}`);
+
+        // Respond with success message
+        res.status(200).send({ message: `User with ID ${userId} has been deleted.` });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).send('Error deleting user.');
+    }
+});
+
+
 app.post('/users/:id/deleteHeadset/:deviceID', async (req, res) => {
     try {
         const { id, deviceID} = req.params;
@@ -225,7 +269,7 @@ app.post('/users/:id/deleteHeadset/:deviceID', async (req, res) => {
         // Get the headset document
         console.log(deviceID)
         let headsetDoc = await db.collection('devices').where('deviceID', '==', deviceID).limit(1).get();
-        
+
 
         if (headsetDoc.empty) {
             return res.status(404).send('Headset not found');
@@ -249,7 +293,7 @@ app.post('/users/:id/deleteHeadset/:deviceID', async (req, res) => {
 
         await db.collection('devices').doc(headsetDoc.id).delete();
 
-        
+
 
         console.log(`Successfully deleted headset ${deviceID} and removed it from user ${id}`);
         res.status(200).send({ message: 'Headset deleted and removed from user successfully' });
@@ -310,7 +354,7 @@ app.post('/users/:id/headsets/:deviceID/addEstate/:estateID', async (req, res) =
         // Get the headset document
         console.log(deviceID)
         let headsetDoc = await db.collection('devices').where('deviceID', '==', deviceID).limit(1).get();
-        
+
 
         if (headsetDoc.empty) {
             return res.status(404).send('Headset not found');
