@@ -144,7 +144,7 @@ app.post('/users/createUser', async (req, res) => {
             firebaseAuthId,  // Firebase Auth UID
             email,
             name,
-            password
+            password,
             createdAt: new Date(),
             updatedAt: new Date(),
         };
