@@ -183,27 +183,153 @@ app.get('/users/:userId/headsets', async (req, res) => {
     res.send(retObj);
 });
 
-app.get('/users/:userId/addHeadset', async (req, res) => {
-    const snapshot = await db.collection('devices').add({
+app.post('/users/:userId/addHeadset', async (req, res) => {
+    try {
+        // Extract details from the request body
+        const { deviceID, deviceName } = req.body;
 
-        owner: req.params.userId
-    });
-    res.send(snapshot);
+        // Validate the required fields
+        if (!deviceID || !deviceName) {
+            return res.status(400).send('deviceID and deviceName are required');
+        }
+
+        // Add the new headset to Firestore's "devices" collection
+        const newHeadsetRef = await db.collection('devices').add({
+            owner: req.params.userId,
+            deviceID: deviceID,
+            deviceName: deviceName,
+            status: 'Offline', // Default status to 'Offline'
+            createdAt: Timestamp.now(),
+        });
+
+        // Update the user's assignedDevices array in Firestore
+        await db.collection('users').doc(req.params.userId).update({
+            assignedDevices: FieldValue.arrayUnion(deviceID), // This will add the deviceID to the array or create it if it doesn't exist
+        });
+
+        console.log(`Successfully added new headset for user: ${req.params.userId}`);
+        res.status(201).send({
+            id: newHeadsetRef.id,
+            message: 'Headset successfully added and assigned to user',
+        });
+    } catch (error) {
+        console.error('Error adding headset:', error);
+        res.status(500).send('Error adding headset');
+    }
 });
+
+app.delete('/users/:id/headsets/:deviceID', async (req, res) => {
+    try {
+        const { id, deviceID } = req.params;
+
+        // Get the headset document
+        const headsetDoc = await db.collection('devices').doc(deviceID).get();
+
+        if (!headsetDoc.exists) {
+            return res.status(404).send('Headset not found');
+        }
+
+        const headsetData = headsetDoc.data();
+
+        if (headsetData.owner !== id) {
+            return res.status(403).send('User is not the owner of the headset');
+        }
+
+        // Delete the headset from Firestore
+        await db.collection('devices').doc(deviceID).delete();
+
+        // Remove the headset from the user's assignedDevices
+        await db.collection('users').doc(id).update({
+            assignedDevices: FieldValue.arrayRemove(headsetData.deviceID)
+        });
+
+        console.log(`Successfully deleted headset ${deviceID} and removed it from user ${id}`);
+        res.status(200).send({ message: 'Headset deleted and removed from user successfully' });
+    } catch (error) {
+        console.error('Error deleting headset:', error);
+        res.status(500).send('Error deleting headset');
+    }
+});
+
 
 app.get('/users/:userId/estates', async (req, res) => {
-    //const snapshot = await db.collection('estates').where('owner', '==', req.params.userId).get();
-    const snapshot = await db.collection('users').where('id','==',req.params.userId).get()
-    console.log(req.params.userId)
-    let assignedEstates = snapshot.docs[0].data().assignedEstates;
-    let retList = []
-    for (let index = 0; index < assignedEstates.length; index++) {
-        let estate = await db.collection('estates').where('estateID','==',assignedEstates[index]).get()
-        retList.push(estate.docs[0].data())
+    try {
+        // Fetch the user document to get assignedEstates
+        const userSnapshot = await db.collection('users').doc(req.params.userId).get();
+
+        if (!userSnapshot.exists) {
+            return res.status(404).send('User not found');
+        }
+
+        const assignedEstates = userSnapshot.data().assignedEstates || []; // Default to empty array if not present
+
+        if (assignedEstates.length === 0) {
+            return res.send([]); // No assigned estates, return an empty array
+        }
+
+        // Fetch estates that match the assigned estate IDs
+        const estatesSnapshot = await db.collection('estates')
+            .where('estateID', 'in', assignedEstates)
+            .get();
+
+        const estates = estatesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+        }));
+
+        res.send(estates);
+    } catch (error) {
+        console.error('Error fetching estates:', error);
+        res.status(500).send('Error fetching estates');
     }
-    res.send(retList);
 });
 
+app.post('/users/:userId/addEstate', async (req, res) => {
+    const { estateID, estateName, scenes } = req.body; // Expect estate details in the request body
+
+    // Validate required fields
+    if (!estateID || !estateName || !Array.isArray(scenes)) {
+        return res.status(400).send('estateID, estateName, and scenes are required');
+    }
+
+    try {
+        // Create the new estate in the Firestore 'estates' collection
+        const estateDoc = await db.collection('estates').add({
+            owner: req.params.userId,
+            estateID: estateID,
+            estateName: estateName,
+            scenes: scenes, // Directly assign the scenes array
+            status: 'Available', // Default status if not provided
+            createdAt: Timestamp.now()
+        });
+
+        console.log('Successfully created new estate:', estateDoc.id);
+
+        // Update the user's assignedEstates
+        const userRef = db.collection('users').doc(req.params.userId);
+
+        // Use Firestore's arrayUnion to add the new estateID to the assignedEstates
+        await userRef.update({
+            assignedEstates: FieldValue.arrayUnion(estateID)
+        });
+
+        // Respond with success message and estate details
+        res.status(201).send({
+            id: estateDoc.id,
+            message: 'Estate created and assigned successfully',
+            estate: {
+                estateID: estateID,
+                estateName: estateName,
+                scenes: scenes, // Include scenes in the response
+                status: 'Available',
+                createdAt: Timestamp.now()
+            }
+        });
+    } catch (error) {
+        console.error('Error adding estate:', error);
+        res.status(500).send('Error adding estate'); // Return a 500 status for server errors
+    }
+});
 
 app.get('/', (req, res) => {
     res.send('<h1>Hello world</h1>');
