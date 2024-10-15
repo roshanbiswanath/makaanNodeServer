@@ -218,30 +218,38 @@ app.post('/users/:userId/addHeadset', async (req, res) => {
     }
 });
 
-app.delete('/users/:id/headsets/:deviceID', async (req, res) => {
+app.post('/users/:id/deleteHeadset/:deviceID', async (req, res) => {
     try {
-        const { id, deviceID } = req.params;
+        const { id, deviceID} = req.params;
 
         // Get the headset document
-        const headsetDoc = await db.collection('devices').doc(deviceID).get();
+        console.log(deviceID)
+        let headsetDoc = await db.collection('devices').where('deviceID', '==', deviceID).limit(1).get();
+        
 
-        if (!headsetDoc.exists) {
+        if (headsetDoc.empty) {
             return res.status(404).send('Headset not found');
         }
 
-        const headsetData = headsetDoc.data();
+        let headsetData
+        headsetDoc.forEach(doc => {
+            headsetDoc = doc
+        });
 
+        headsetData = headsetDoc.data();
+        console.log(headsetDoc.id)
         if (headsetData.owner !== id) {
             return res.status(403).send('User is not the owner of the headset');
         }
-
-        // Delete the headset from Firestore
-        await db.collection('devices').doc(deviceID).delete();
 
         // Remove the headset from the user's assignedDevices
         await db.collection('users').doc(id).update({
             assignedDevices: FieldValue.arrayRemove(headsetData.deviceID)
         });
+
+        await db.collection('devices').doc(headsetDoc.id).delete();
+
+        
 
         console.log(`Successfully deleted headset ${deviceID} and removed it from user ${id}`);
         res.status(200).send({ message: 'Headset deleted and removed from user successfully' });
@@ -251,6 +259,86 @@ app.delete('/users/:id/headsets/:deviceID', async (req, res) => {
     }
 });
 
+app.post('/users/:id/deleteEstate/:estateID', async (req, res) => {
+    try {
+        const { id, estateID } = req.params;
+
+        let estateDoc = await db.collection('estates').where('estateID', '==', estateID).limit(1).get();
+
+        if (estateDoc.empty) {
+            return res.status(404).send('Estate not found');
+        }
+
+        let estateData
+        estateDoc.forEach(doc => {
+            estateDoc = doc
+        });
+
+        estateData = estateDoc.data();
+        console.log(estateDoc.id)
+        if (estateData.owner !== id) {
+            return res.status(403).send('User is not the owner of the estate');
+        }
+
+        // Remove the estate from the user's assignedEstates
+        await db.collection('users').doc(id).update({
+            assignedEstates: FieldValue.arrayRemove(estateData.estateID)
+        });
+
+        const devices = await db.collection('devices').where('estateIDs', 'array-contains', estateID).get();
+
+        devices.forEach(async (doc) => {
+            await db.collection('devices').doc(doc.id).update({
+                estateIDs: FieldValue.arrayRemove(estateID)
+            });
+        });
+
+        await db.collection('estates').doc(estateDoc.id).delete();
+
+        console.log(`Successfully deleted estate ${estateID} and removed it from user ${id}`);
+        res.status(200).send({ message: 'Estate deleted and removed from user successfully' });
+    } catch (error) {
+        console.error('Error deleting estate:', error);
+        res.status(500).send('Error deleting estate');
+    }
+});
+
+app.post('/users/:id/headsets/:deviceID/addEstate/:estateID', async (req, res) => {
+    try {
+        const { id, deviceID,estateID } = req.params;
+
+        // Get the headset document
+        console.log(deviceID)
+        let headsetDoc = await db.collection('devices').where('deviceID', '==', deviceID).limit(1).get();
+        
+
+        if (headsetDoc.empty) {
+            return res.status(404).send('Headset not found');
+        }
+
+        let headsetData
+        headsetDoc.forEach(doc => {
+            headsetDoc = doc
+        });
+
+        headsetData = headsetDoc.data();
+
+        if (headsetData.owner !== id) {
+            return res.status(403).send('User is not the owner of the headset');
+        }
+
+        let headset = await db.collection('devices').doc(headsetDoc.id);
+
+        await headset.update({
+            estateIDs: FieldValue.arrayUnion(estateID), // This will add the deviceID to the array or create it if it doesn't exist
+        });
+
+        res.status(200).send({ message: 'Estate added to device successfully' });
+    } catch (error) {
+        console.error('Error adding estate:', error);
+        res.status(500).send('Error adding estate');
+    }
+});
 
 app.get('/users/:userId/estates', async (req, res) => {
     try {
@@ -330,6 +418,7 @@ app.post('/users/:userId/addEstate', async (req, res) => {
         res.status(500).send('Error adding estate'); // Return a 500 status for server errors
     }
 });
+
 
 app.get('/', (req, res) => {
     res.send('<h1>Hello world</h1>');
