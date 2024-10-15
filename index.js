@@ -144,6 +144,7 @@ app.post('/users/createUser', async (req, res) => {
             firebaseAuthId,  // Firebase Auth UID
             email,
             name,
+            password
             createdAt: new Date(),
             updatedAt: new Date(),
         };
@@ -169,22 +170,38 @@ app.post('/users/createUser', async (req, res) => {
 
 app.post('/users/login', async (req, res) => {
     const { email, password } = req.body;
-    console.log("Login Required")
+    
+    console.log("Login Required");
+
     if (!email || !password) {
         return res.status(400).send('Email and password are required');
     }
 
     try {
-        const userRecord = await getAuth().getUserByEmail(email);
+        // Query Firestore to find the user with the given email
+        const userSnapshot = await db.collection('users').where('email', '==', email).get();
 
-        // Note: Password verification logic should be added here
-        // For now, assuming that if user exists, the password is valid
-        // This is just for demonstration; you should implement proper password validation
+        if (userSnapshot.empty) {
+            return res.status(400).send('Invalid email or password');
+        }
 
-        res.send({
-            message: 'Login successful',
-            uid: userRecord.uid
+        let user = null;
+        userSnapshot.forEach(doc => {
+            user = doc.data();
         });
+
+        // Compare the plain-text password (Not Recommended in Production)
+        if (password === user.password) {
+            // Password is correct; send success response
+            res.send({
+                message: 'Login successful',
+                uid: user.id
+            });
+        } else {
+            // Password is incorrect
+            return res.status(400).send('Invalid email or password');
+        }
+
     } catch (error) {
         console.error('Error logging in:', error);
         res.status(500).send('Error logging in');
