@@ -433,6 +433,38 @@ app.get('/users/:userId/estates', async (req, res) => {
     }
 });
 
+app.get('/users/:userId/headsets/:deviceID/estates', async (req, res) => {
+    try {
+        // Fetch the user document to get assignedEstates
+        const userSnapshot = await db.collection('users').doc(req.params.userId).get();
+
+        if (!userSnapshot.exists) {
+            return res.status(404).send('User not found');
+        }
+
+        const assignedEstates = userSnapshot.data().assignedEstates || []; // Default to empty array if not present
+
+        if (assignedEstates.length === 0) {
+            return res.send([]); // No assigned estates, return an empty array
+        }
+
+        // Fetch estates that match the assigned estate IDs
+        const estatesSnapshot = await db.collection('estates')
+            .where('estateID', 'in', assignedEstates)
+            .get();
+
+        const estates = estatesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+        }));
+
+        res.send(estates);
+    } catch (error) {
+        console.error('Error fetching estates:', error);
+        res.status(500).send('Error fetching estates');
+    }
+});
+
 app.post('/users/:userId/addEstate', async (req, res) => {
     const { estateID, estateName, scenes } = req.body; // Expect estate details in the request body
 
