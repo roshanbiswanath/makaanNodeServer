@@ -442,7 +442,18 @@ app.get('/users/:userId/headsets/:deviceID/estates', async (req, res) => {
             return res.status(404).send('User not found');
         }
 
-        const assignedEstates = userSnapshot.data().assignedEstates || []; // Default to empty array if not present
+        const deviceSnapshot = await db.collection('devices').where('deviceID', '==', req.params.deviceID).get();
+        
+        if (deviceSnapshot.empty) {
+            return res.status(404).send('Device not found');
+        }
+
+        let deviceData
+        deviceSnapshot.forEach(doc => {
+            deviceData = doc.data();
+        });
+
+        const assignedEstates = deviceData.estateIDs || []; // Default to empty array if not present
 
         if (assignedEstates.length === 0) {
             return res.send([]); // No assigned estates, return an empty array
